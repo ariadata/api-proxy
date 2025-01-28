@@ -1,0 +1,124 @@
+{
+  "GLOBAL_SETTINGS": {
+    "DIRECT_ACCESS": true,
+    "BASE_PATH": "/proxy",
+    "PROXIES": [
+      "socks5://username:password@proxy1.example.com:1080",
+      "socks5h://username:password@proxy2.example.com:1080",
+      "http://username:password@proxy3.example.com:8080",
+      "https://username:password@proxy4.example.com:8443"
+    ]
+  },
+  "SITES": {
+    "toncenter-testnet": {
+      "domain": "https://testnet.toncenter.com/",
+      "PROXY_TYPE": "header",
+      "KEY": "X-Api-Key",
+      "VALUES": [
+        {"key1": 3},
+        {"key2": 3},
+        {"key3": 3}
+      ]
+    },
+    "toncenter-mainnet": {
+      "domain": "https://toncenter.com/",
+      "PROXY_TYPE": "header",
+      "KEY": "X-Api-Key",
+      "VALUES": [
+        {"key1": 3},
+        {"key2": 3},
+        {"key3": 3}
+      ]
+    },
+    "tonapi-testnet": {
+      "domain": "https://testnet.tonapi.io/",
+      "PROXY_TYPE": "header",
+      "KEY": "Authorization",
+      "VALUES": [
+        {"Bearer token1": 1},
+        {"Bearer token2": 1},
+        {"Bearer token3": 1}
+      ]
+    },
+    "tonapi-mainnet": {
+      "domain": "https://tonapi.io/",
+      "PROXY_TYPE": "header",
+      "KEY": "Authorization",
+      "VALUES": [
+        {"Bearer token1": 1},
+        {"Bearer token2": 1},
+        {"Bearer token3": 1}
+      ]
+    },
+    "query-auth-example": {
+      "domain": "https://api.example.com/",
+      "PROXY_TYPE": "query",
+      "KEY": "api_key",
+      "VALUES": [
+        {"querykey1": 5},
+        {"querykey2": 5}
+      ]
+    },
+    "basic-auth-example": {
+      "domain": "https://api.basicauth.com/",
+      "PROXY_TYPE": "header",
+      "KEY": "Authorization",
+      "VALUES": [
+        {"Basic dXNlcjpwYXNz": 10}
+      ]
+    },
+    "custom-header-example": {
+      "domain": "https://api.customheader.com/",
+      "PROXY_TYPE": "header",
+      "KEY": "Custom-API-Key",
+      "VALUES": [
+        {"customkey1": 20},
+        {"customkey2": 20}
+      ]
+    },
+    "example-mainnet": {
+    "domain": "https://sub.example.com/xx/",
+    "PROXY_TYPE": "path",
+    "KEY": "",
+    "VALUES": [
+        {"abcd": 4},
+        {"abtg": 2},
+        {"_xYg": 5}
+      ]
+    },
+    "example-direct": {
+    "domain": "",
+    "PROXY_TYPE": "direct",
+    "KEY": "",
+    "VALUES": [
+        {"https://example1.com/go/": 4},
+        {"https://example2.com/subdir/a/b/": 2},
+        {"https://example3.com": 5}
+      ]
+    },
+    "public-api-example": {
+      "domain": "",
+      "PROXY_TYPE": "direct",
+      "KEY": "",
+      "VALUES": [
+        {"https://example1.com": 0},
+      ]
+    },
+    "no-trailing-slash": {
+      "domain": ""
+      "PROXY_TYPE": "direct",
+      "KEY": "",
+      "VALUES": [
+        {"https://api.notrailingslash.com": 0},
+      ]
+    },
+    "myip4": {
+      "domain": "",
+      "PROXY_TYPE": "direct",
+      "KEY": "",
+      "VALUES": [
+        {"https://myip4.ir/": 0},
+      ]
+    }
+  }
+}

@@ -1,0 +1,35 @@
+# Git
+.git
+.gitignore
+.github
+
+# IDE
+.idea
+.vscode
+
+# Build
+./api-proxy
+
+# Docker
+docker-compose.yml
+
+# Config
+config.json
+
+# Env
+.env
+
+# README
+README.md
+
+# LICENSE
+LICENSE
+
+# .github
+.github
+
+# .gitignore
+.gitignore
+
+# .dockerignore
+.dockerignore

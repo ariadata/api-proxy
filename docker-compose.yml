@@ -1,0 +1,27 @@
+services:
+  api-proxy:
+    image: 'ghcr.io/ariadata/api-proxy:latest'
+    #build:
+      #context: .
+      #dockerfile: Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-api-proxy}_api-proxy
+    restart: unless-stopped
+    hostname: api-proxy
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    volumes:
+      - ./config.json:/app/config.json
+    ports:
+      - "${DC_HTTP_PORT:-3003}:3000"
+    #environment:
+    #  - LOG_LEVEL=info # debug, info, warn, error, fatal, panic
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"    # Limit each log file to 10 megabytes
+        max-file: "3"      # Keep up to 3 log files
+    healthcheck:
+      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:3003/" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
