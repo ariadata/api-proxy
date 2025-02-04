@@ -1,9 +1,9 @@
 services:
   api-proxy:
     image: 'ghcr.io/ariadata/api-proxy:latest'
-    #build:
-      #context: .
-      #dockerfile: Dockerfile
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: ${COMPOSE_PROJECT_NAME:-api-proxy}_api-proxy
     restart: unless-stopped
     hostname: api-proxy

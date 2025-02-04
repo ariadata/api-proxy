@@ -10,12 +10,15 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
+	"golang.org/x/net/http2"
 	"golang.org/x/net/proxy"
 )
 
@@ -101,6 +104,7 @@ func createProxyClient(proxyURL string) (*http.Client, error) {
 		return nil, err
 	}
 
+	var transport *http.Transport
 	switch urlParsed.Scheme {
 	case "socks5", "socks5h":
 		auth := &proxy.Auth{
@@ -118,25 +122,33 @@ func createProxyClient(proxyURL string) (*http.Client, error) {
 			return nil, err
 		}
 
-		transport := &http.Transport{
+		transport = &http.Transport{
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 				return dialer.Dial(network, addr)
 			},
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 20,
+			IdleConnTimeout:     90 * time.Second,
 		}
-		return &http.Client{Transport: transport}, nil
 
 	case "http", "https":
-		transport := &http.Transport{
+		transport = &http.Transport{
 			Proxy: http.ProxyURL(urlParsed),
 			DialContext: (&net.Dialer{
 				Timeout:   30 * time.Second,
 				KeepAlive: 30 * time.Second,
 			}).DialContext,
 		}
-		return &http.Client{Transport: transport}, nil
+	default:
+		return nil, fmt.Errorf("unsupported proxy scheme: %s", urlParsed.Scheme)
 	}
 
-	return nil, fmt.Errorf("unsupported proxy scheme: %s", urlParsed.Scheme)
+	// Enable HTTP/2 support for the transport
+	if err := http2.ConfigureTransport(transport); err != nil {
+		return nil, fmt.Errorf("failed to configure HTTP/2: %v", err)
+	}
+
+	return &http.Client{Transport: transport, Timeout: 30 * time.Second}, nil
 }
 
 func NewProxyServer(configPath string) (*ProxyServer, error) {
@@ -150,12 +162,33 @@ func NewProxyServer(configPath string) (*ProxyServer, error) {
 		return nil, fmt.Errorf("failed to parse config: %v", err)
 	}
 
+	// Validate site configurations
+	for siteName, siteConfig := range config.Sites {
+		allowedProxyTypes := map[string]bool{"header": true, "query": true, "path": true, "direct": true}
+		if !allowedProxyTypes[siteConfig.ProxyType] {
+			return nil, fmt.Errorf("invalid PROXY_TYPE %s for site %s", siteConfig.ProxyType, siteName)
+		}
+
+		if siteConfig.ProxyType == "direct" {
+			for _, keyLimit := range siteConfig.Values {
+				for key := range keyLimit {
+					if _, err := url.Parse(key); err != nil {
+						return nil, fmt.Errorf("invalid URL in direct proxy VALUES for site %s: %v", siteName, key)
+					}
+				}
+			}
+		} else if (siteConfig.ProxyType == "header" || siteConfig.ProxyType == "query") && siteConfig.Key == "" {
+			return nil, fmt.Errorf("PROXY_TYPE %s requires KEY for site %s", siteConfig.ProxyType, siteName)
+		}
+	}
+
 	server := &ProxyServer{
 		config:  config,
 		clients: make([]ClientWrapper, 0),
 		sites:   make(map[string]*SiteHandler),
 	}
 
+	// Initialize site handlers
 	for siteName, siteConfig := range config.Sites {
 		handler := &SiteHandler{
 			config:  siteConfig,
@@ -176,13 +209,19 @@ func NewProxyServer(configPath string) (*ProxyServer, error) {
 		server.sites[siteName] = handler
 	}
 
+	// Initialize direct client if enabled
 	if config.GlobalSettings.DirectAccess {
+		transport := &http.Transport{}
+		if err := http2.ConfigureTransport(transport); err != nil {
+			log.Printf("Failed to configure HTTP/2 for direct client: %v", err)
+		}
 		server.clients = append(server.clients, ClientWrapper{
-			Client:   &http.Client{Timeout: 30 * time.Second},
+			Client:   &http.Client{Transport: transport, Timeout: 30 * time.Second},
 			IsDirect: true,
 		})
 	}
 
+	// Initialize proxy clients
 	for _, proxyURL := range config.GlobalSettings.Proxies {
 		client, err := createProxyClient(proxyURL)
 		if err != nil {
@@ -195,6 +234,7 @@ func NewProxyServer(configPath string) (*ProxyServer, error) {
 		})
 	}
 
+	// Ensure at least one client is available
 	if len(server.clients) == 0 {
 		return nil, fmt.Errorf("no working clients available")
 	}
@@ -237,7 +277,6 @@ func (s *ProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Handle base path
 	basePath := s.config.GlobalSettings.BasePath
 	if basePath == "" {
 		basePath = "/proxy"
@@ -249,7 +288,6 @@ func (s *ProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Process remaining path after base path
 	remainingPath := strings.TrimPrefix(r.URL.Path, basePath)
 	remainingPath = strings.Trim(remainingPath, "/")
 
@@ -344,7 +382,6 @@ func (s *ProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) {
 			q.Set(siteHandler.config.Key, apiKey)
 			outReq.URL.RawQuery = q.Encode()
 		case "path":
-			// Already handled in path construction
 		default:
 			log.Printf("Unknown PROXY_TYPE: %s", siteHandler.config.ProxyType)
 		}
@@ -375,8 +412,8 @@ func (s *ProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) {
 		outReq.Header.Del(header)
 	}
 
-	outReq.Header.Set("Accept", "application/json")
-	outReq.Header.Set("Content-Type", "application/json")
+	//outReq.Header.Set("Accept", "application/json")
+	//outReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.Client.Do(outReq)
 	if err != nil {
@@ -397,15 +434,11 @@ func (s *ProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf("Failed to read response body: %v", err)
-		http.Error(w, "Failed to read response", http.StatusInternalServerError)
-		return
-	}
-
 	w.WriteHeader(resp.StatusCode)
-	_, _ = w.Write(bodyBytes)
+	_, err = io.Copy(w, resp.Body)
+	if err != nil {
+		log.Printf("Failed to stream response: %v", err)
+	}
 }
 
 func main() {
@@ -422,7 +455,25 @@ func main() {
 	http.HandleFunc("/", server.handleRequest)
 
 	log.Printf("Starting proxy server on :3000")
-	if err := http.ListenAndServe(":3000", nil); err != nil {
-		log.Fatalf("Server error: %v", err)
+
+	srv := &http.Server{
+		Addr:    ":3000",
+		Handler: nil,
+	}
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil {
+			log.Fatalf("Server error: %v", err)
+		}
+	}()
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	<-stop
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("Server shutdown error: %v", err)
 	}
 }
