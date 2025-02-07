@@ -416,6 +416,7 @@ func (s *ProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) {
 	//outReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.Client.Do(outReq)
+	//resp, err := client.Client.Do(outReq.WithContext(r.Context()))
 	if err != nil {
 		log.Printf("Request to %s failed: %v", targetURL.String(), err)
 		http.Error(w, "Failed to forward request", http.StatusBadGateway)
@@ -459,6 +460,8 @@ func main() {
 	srv := &http.Server{
 		Addr:    ":3000",
 		Handler: nil,
+		ReadTimeout:  60 * time.Second,  // Increase read timeout
+		WriteTimeout: 60 * time.Second,   // Increase write timeout
 	}
 
 	go func() {
